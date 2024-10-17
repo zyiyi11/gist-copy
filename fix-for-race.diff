@@ -1,5 +1,5 @@
 diff --git a/pkg/providers/vsphere/vmprovider_vm_test.go b/pkg/providers/vsphere/vmprovider_vm_test.go
-index 38b31d52..19bff6ec 100644
+index 38b31d52..5525c7fe 100644
 --- a/pkg/providers/vsphere/vmprovider_vm_test.go
 +++ b/pkg/providers/vsphere/vmprovider_vm_test.go
 @@ -5,6 +5,7 @@ package vsphere_test
@@ -43,12 +43,9 @@ index 38b31d52..19bff6ec 100644
  		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
  			config.MaxDeployThreadsOnProvider = 1
  		})
-@@ -1405,17 +1409,17 @@ func vmTests() {
- 				})
- 			})
+@@ -1407,15 +1411,15 @@ func vmTests() {
  
--			Context("Crypto", Label(testlabels.Crypto), func() {
-+			FContext("Crypto", Label(testlabels.Crypto), func() {
+ 			Context("Crypto", Label(testlabels.Crypto), func() {
  				BeforeEach(func() {
 -					vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{}
 -				})
