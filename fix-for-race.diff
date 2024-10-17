@@ -1,0 +1,160 @@
+diff --git a/pkg/providers/vsphere/vmprovider_vm_test.go b/pkg/providers/vsphere/vmprovider_vm_test.go
+index 38b31d52..19bff6ec 100644
+--- a/pkg/providers/vsphere/vmprovider_vm_test.go
++++ b/pkg/providers/vsphere/vmprovider_vm_test.go
+@@ -5,6 +5,7 @@ package vsphere_test
+ 
+ import (
+ 	"bytes"
++	"context"
+ 	"encoding/json"
+ 	"fmt"
+ 	"math/rand"
+@@ -33,6 +34,7 @@ import (
+ 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+ 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
+ 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
++	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
+ 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
+ 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
+ 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+@@ -61,6 +63,7 @@ func vmTests() {
+ 	)
+ 
+ 	var (
++		parentCtx   context.Context
+ 		initObjects []client.Object
+ 		testConfig  builder.VCSimTestConfig
+ 		ctx         *builder.TestContextForVCSim
+@@ -69,6 +72,7 @@ func vmTests() {
+ 	)
+ 
+ 	BeforeEach(func() {
++		parentCtx = ctxop.WithContext(pkgcfg.NewContext())
+ 		testConfig = builder.VCSimTestConfig{
+ 			WithContentLibrary:    true,
+ 			WithWorkloadIsolation: true,
+@@ -76,7 +80,7 @@ func vmTests() {
+ 	})
+ 
+ 	JustBeforeEach(func() {
+-		ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
++		ctx = suite.NewTestContextForVCSimWithParentContext(parentCtx, testConfig, initObjects...)
+ 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+ 			config.MaxDeployThreadsOnProvider = 1
+ 		})
+@@ -1405,17 +1409,17 @@ func vmTests() {
+ 				})
+ 			})
+ 
+-			Context("Crypto", Label(testlabels.Crypto), func() {
++			FContext("Crypto", Label(testlabels.Crypto), func() {
+ 				BeforeEach(func() {
+-					vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{}
+-				})
+-				JustBeforeEach(func() {
+-					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
++					pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+ 						config.Features.BringYourOwnEncryptionKey = true
+ 					})
+-					ctx.Context = vmconfig.WithContext(ctx.Context)
+-					ctx.Context = vmconfig.Register(ctx.Context, crypto.New())
++					parentCtx = vmconfig.WithContext(parentCtx)
++					parentCtx = vmconfig.Register(parentCtx, crypto.New())
+ 
++					vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{}
++				})
++				JustBeforeEach(func() {
+ 					var storageClass storagev1.StorageClass
+ 					Expect(ctx.Client.Get(
+ 						ctx,
+diff --git a/pkg/vmconfig/crypto/crypto_reconciler_pre_test.go b/pkg/vmconfig/crypto/crypto_reconciler_pre_test.go
+index 93852c90..2d8def8b 100644
+--- a/pkg/vmconfig/crypto/crypto_reconciler_pre_test.go
++++ b/pkg/vmconfig/crypto/crypto_reconciler_pre_test.go
+@@ -62,7 +62,8 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
+ 	BeforeEach(func() {
+ 		r = pkgcrypto.New()
+ 
+-		vcsimCtx := builder.NewTestContextForVCSim(builder.VCSimTestConfig{})
++		vcsimCtx := builder.NewTestContextForVCSim(
++			context.Background(), builder.VCSimTestConfig{})
+ 		ctx = vcsimCtx
+ 		ctx = r.WithContext(ctx)
+ 		ctx = vmconfig.WithContext(ctx)
+diff --git a/test/builder/unit_test_context.go b/test/builder/unit_test_context.go
+index e62204d3..97ece10b 100644
+--- a/test/builder/unit_test_context.go
++++ b/test/builder/unit_test_context.go
+@@ -28,10 +28,15 @@ type UnitTestContext struct {
+ 
+ // NewUnitTestContext returns a new UnitTestContext.
+ func NewUnitTestContext(initObjects ...client.Object) *UnitTestContext {
++	return NewUnitTestContextWithParentContext(
++		ctxop.WithContext(pkgcfg.NewContext()), initObjects...)
++}
++
++func NewUnitTestContextWithParentContext(ctx context.Context, initObjects ...client.Object) *UnitTestContext {
+ 	fakeClient := NewFakeClient(initObjects...)
+ 
+ 	return &UnitTestContext{
+-		Context: ctxop.WithContext(pkgcfg.NewContext()),
++		Context: ctx,
+ 		Client:  fakeClient,
+ 		Scheme:  fakeClient.Scheme(),
+ 	}
+diff --git a/test/builder/vcsim_test_context.go b/test/builder/vcsim_test_context.go
+index 4e3241f8..1f00e4f4 100644
+--- a/test/builder/vcsim_test_context.go
++++ b/test/builder/vcsim_test_context.go
+@@ -211,10 +211,11 @@ const (
+ )
+ 
+ func NewTestContextForVCSim(
++	parentCtx context.Context,
+ 	config VCSimTestConfig,
+ 	initObjects ...ctrlclient.Object) *TestContextForVCSim {
+ 
+-	ctx := newTestContextForVCSim(config, initObjects)
++	ctx := newTestContextForVCSim(parentCtx, config, initObjects)
+ 
+ 	ctx.setupEnv(config)
+ 	ctx.setupVCSim(config)
+@@ -236,7 +237,7 @@ func NewIntegrationTestContextForVCSim(
+ 	initProvidersFn pkgmgr.InitializeProvidersFunc,
+ 	initEnvFn InitVCSimEnvFn) *IntegrationTestContextForVCSim {
+ 
+-	utVcSimCtx := newTestContextForVCSim(config, nil)
++	utVcSimCtx := newTestContextForVCSim(context.Background(), config, nil)
+ 	utVcSimCtx.Context = ctx
+ 
+ 	itVcSimCtx := IntegrationTestContextForVCSim{
+@@ -279,17 +280,26 @@ func (s *TestSuite) NewTestContextForVCSim(
+ 	config VCSimTestConfig,
+ 	initObjects ...ctrlclient.Object) *TestContextForVCSim {
+ 
+-	return NewTestContextForVCSim(config, initObjects...)
++	return NewTestContextForVCSim(context.Background(), config, initObjects...)
++}
++
++func (s *TestSuite) NewTestContextForVCSimWithParentContext(
++	ctx context.Context,
++	config VCSimTestConfig,
++	initObjects ...ctrlclient.Object) *TestContextForVCSim {
++
++	return NewTestContextForVCSim(ctx, config, initObjects...)
+ }
+ 
+ func newTestContextForVCSim(
++	parentCtx context.Context,
+ 	config VCSimTestConfig,
+ 	initObjects []ctrlclient.Object) *TestContextForVCSim {
+ 
+ 	fakeRecorder, _ := NewFakeRecorder()
+ 
+ 	ctx := &TestContextForVCSim{
+-		UnitTestContext: NewUnitTestContext(initObjects...),
++		UnitTestContext: NewUnitTestContextWithParentContext(parentCtx, initObjects...),
+ 		PodNamespace:    "vmop-pod-test",
+ 		Recorder:        fakeRecorder,
+ 	}
