@@ -101,10 +101,18 @@ index e62204d3..97ece10b 100644
  		Scheme:  fakeClient.Scheme(),
  	}
 diff --git a/test/builder/vcsim_test_context.go b/test/builder/vcsim_test_context.go
-index 4e3241f8..1f00e4f4 100644
+index 4e3241f8..52afb289 100644
 --- a/test/builder/vcsim_test_context.go
 +++ b/test/builder/vcsim_test_context.go
-@@ -211,10 +211,11 @@ const (
+@@ -61,6 +61,7 @@ import (
+ 	"github.com/vmware-tanzu/vm-operator/api/v1alpha3/common"
+ 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+ 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
++	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
+ 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
+ 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+ 	pkgclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
+@@ -211,10 +212,11 @@ const (
  )
  
  func NewTestContextForVCSim(
@@ -117,7 +125,7 @@ index 4e3241f8..1f00e4f4 100644
  
  	ctx.setupEnv(config)
  	ctx.setupVCSim(config)
-@@ -236,7 +237,7 @@ func NewIntegrationTestContextForVCSim(
+@@ -236,7 +238,7 @@ func NewIntegrationTestContextForVCSim(
  	initProvidersFn pkgmgr.InitializeProvidersFunc,
  	initEnvFn InitVCSimEnvFn) *IntegrationTestContextForVCSim {
  
@@ -126,12 +134,13 @@ index 4e3241f8..1f00e4f4 100644
  	utVcSimCtx.Context = ctx
  
  	itVcSimCtx := IntegrationTestContextForVCSim{
-@@ -279,17 +280,26 @@ func (s *TestSuite) NewTestContextForVCSim(
+@@ -279,17 +281,27 @@ func (s *TestSuite) NewTestContextForVCSim(
  	config VCSimTestConfig,
  	initObjects ...ctrlclient.Object) *TestContextForVCSim {
  
 -	return NewTestContextForVCSim(config, initObjects...)
-+	return NewTestContextForVCSim(context.Background(), config, initObjects...)
++	return NewTestContextForVCSim(
++		ctxop.WithContext(pkgcfg.NewContext()), config, initObjects...)
 +}
 +
 +func (s *TestSuite) NewTestContextForVCSimWithParentContext(
